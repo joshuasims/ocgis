@@ -7,6 +7,7 @@ from ocgis import constants
 from ocgis.util.logging_ocgis import ocgis_lh
 from ocgis.exc import EmptySubsetError
 from ocgis.util.helpers import get_is_date_between
+from copy import deepcopy
 
 
 class TemporalDimension(base.VectorDimension):
@@ -45,7 +46,7 @@ class TemporalDimension(base.VectorDimension):
         
         ## grouping is different for date part combinations v. seasonal
         ## aggregation.
-        if isinstance(grouping[0],basestring):
+        if all([isinstance(ii,basestring) for ii in grouping]):
             unique = deque()
             for idx in range(parts.shape[1]):
                 if group_map[idx] in grouping:
@@ -77,14 +78,34 @@ class TemporalDimension(base.VectorDimension):
             dtype = [(dp,object) for dp in self._date_parts]
         ## this is for seasonal aggregations
         else:
+            ## we need to remove the year string from the grouping and do
+            ## not want to modify the original list
+            grouping = deepcopy(grouping)
+            ## search for a year flag, which will break the temporal groups by
+            ## years
+            if 'year' in grouping:
+                has_year = True
+                grouping.remove('year')
+                years = np.unique(parts[:,0])
+            else:
+                has_year = False
+                years = [None]
+            
             dgroups = deque()
-            for group in grouping:
+            grouping_season = deque()
+            for season,year in itertools.product(grouping,years):
                 subgroup = np.zeros(value.shape[0],dtype=bool)
                 for idx in range(value.shape[0]):
-                    if parts[idx,1] in group:
-                        subgroup[idx] = True
+                    if has_year:
+                        if parts[idx,1] in season and year == parts[idx,0]:
+                            subgroup[idx] = True
+                    else:
+                        if parts[idx,1] in season:
+                            subgroup[idx] = True
                 dgroups.append(subgroup)
-            dtype = [('months',object)]
+                grouping_season.append([season,year])
+            dtype = [('months',object),('year',int)]
+            grouping = grouping_season
         
         ## init arrays to hold values and bounds for the grouped data
         new_value = np.empty((len(dgroups),),dtype=dtype)
@@ -96,7 +117,12 @@ class TemporalDimension(base.VectorDimension):
                 new_value[idx] = tuple(select[idx])
             ## likely a seasonal aggregation with a different group representation
             except UnboundLocalError:
-                new_value[idx] = (grouping[idx],)
+                try:
+                    new_value[idx] = (grouping[idx][0],grouping[idx][1])
+                ## there is likely no year associated with the seasonal aggregation
+                ## and it is a Nonetype
+                except TypeError:
+                    new_value[idx]['months'] = grouping[idx][0]
             sel = value[dgrp][:,(0,2)]
             new_bounds[idx,:] = [sel.min(),sel.max()]
         

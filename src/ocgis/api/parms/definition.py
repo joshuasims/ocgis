@@ -170,9 +170,13 @@ class CalcGrouping(base.IterableParameter,base.OcgParameter):
         except DefinitionValidationError:
             months = range(1,13)
             for element in value:
-                for month in element:
-                    if month not in months:
-                        raise(DefinitionValidationError(self,'Month integer value is not recognized: {0}'.format(month)))
+                ## the keyword year is okay for seasonal aggregations
+                if element == 'year':
+                    continue
+                else:
+                    for month in element:
+                        if month not in months:
+                            raise(DefinitionValidationError(self,'Month integer value is not recognized: {0}'.format(month)))
             
 class CalcRaw(base.BooleanParameter):
     name = 'calc_raw'
